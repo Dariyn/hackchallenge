@@ -1,0 +1,7 @@
+version: '3'
+services:
+  auth:
+    image: dawiyn/hackchallenge:v1.0.12
+    env_file: .env
+    ports:
+      - 8000:8000

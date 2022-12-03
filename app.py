@@ -5,6 +5,10 @@ import users_dao
 import datetime
 
 from db import db
+from db import Location
+from db import Users
+from db import Facility
+from db import Reservation
 
 db_filename = "auth.db"
 app = Flask(__name__)
@@ -64,13 +68,25 @@ def register_account():
     Endpoint for registering a new user
     """
     body = json.loads(request.data)
+
+    name = body.get("name")
+    netid = body.get("netid")
     email = body.get("email")
     password = body.get("password")
 
-    if email is None or password is None:
-        return failure_response("Missing email or password", 400)
+    if name is None:
+        return failure_response("Missing name", 400)
 
-    success, user = users_dao.create_user(email, password)
+    if netid is None:
+        return failure_response("Missing netid", 400)
+
+    if email is None:
+        return failure_response("Missing email", 400)
+
+    if password is None:
+        return failure_response("Missing password", 400)
+
+    success, user = users_dao.create_user(name, netid, email, password)
 
     if not success:
         return failure_response("User already exists", 400)
@@ -174,8 +190,8 @@ def get_all_locations():
     """
 
     locations = []
-    for l in db.Locations.query.all():
-        loc = l.simple_serialize()
+    for l in Location.query.all():
+        loc = l.serialize()
         locations.append(loc)
     return success_response({"locations": locations})
 
@@ -195,18 +211,23 @@ def create_location():
     address = body.get("name")
     if address is None:
         return failure_response("No address", 400)
-    weekday_operating_time = body.get("weekday_operating_time")
-    if weekday_operating_time is None:
-        return failure_response("No weekday operating time", 400)
-    weekend_operating_time = body.get("weekend_operating_time")
-    if weekend_operating_time is None:
-        return failure_response("No weekend operating time", 400)
-    holiday = body.get("holiday")
-    if holiday is None:
-        holiday = []
+    weekday_operating_start = body.get("weekday_operating_start")
+    if weekday_operating_start is None:
+        return failure_response("No weekday operating time start", 400)
 
-    location = db.Location(code=code, name=name, address=address, weekday_operating_time=weekday_operating_time,
-                           weekend_operating_time=weekend_operating_time, holiday=holiday)
+    weekday_operating_end = body.get("weekday_operating_start")
+    if weekday_operating_end is None:
+        return failure_response("No weekday operating time end", 400)
+    weekend_operating_start = body.get("weekday_operating_start")
+    if weekday_operating_start is None:
+        return failure_response("No weekend operating time start", 400)
+
+    weekend_operating_end = body.get("weekday_operating_start")
+    if weekday_operating_end is None:
+        return failure_response("No weekend operating time end", 400)
+
+    location = Location(code=code, name=name, address=address, weekday_operating_start=weekday_operating_start, weekday_operating_end=weekday_operating_end,
+                        weekend_operating_start=weekend_operating_start, weekend_operating_end=weekday_operating_end)
     db.session.add(location)
     db.session.commit()
 
@@ -214,9 +235,10 @@ def create_location():
         "id": location.id,
         "code": location.code,
         "name": location.name,
-        "weekday_operating_time": location.weekday_operating_time,
-        "weekend_operating_time": location.weekend_operating_time,
-        "holiday": location.holiday
+        "weekday_operating_start": location.weekday_operating_start,
+        "weekday_operating_end": location.weekday_operating_end,
+        "weekend_operating_start": location.weekend_operating_start,
+        "weekend_operating_end": location.weekend_operating_end,
     }
     return success_response(new_location, 201)
 
@@ -227,7 +249,7 @@ def get_location(id):
     Endpoint for getting a location by id
     """
 
-    location = db.Location.query.filter_by(id=id).first()
+    location = Location.query.filter_by(id=id).first()
     if location is None:
         return failure_response("Location not found")
     return success_response(location.serialize())
@@ -239,7 +261,7 @@ def delete_location(id):
     Endpoint for deleting a course by id
     """
 
-    location = db.Locations.query.filter_by(id=id).first()
+    location = Location.query.filter_by(id=id).first()
     if location is None:
         return failure_response("Location not found")
 
@@ -254,18 +276,19 @@ def get_user(id):
     Endpoint for getting a user by id
     """
 
-    user = db.Users.query.filter_by(id=id).first()
+    user = Users.query.filter_by(id=id).first()
     if user is None:
         return failure_response("User not found")
     return success_response(user.serialize())
 
 
+@app.route("/api/users/<int:id>/", methods=["DELETE"])
 def delete_user(id):
     """
     Endpoint for deleting a user by id
     """
 
-    user = db.Locations.query.filter_by(id=id).first()
+    user = Users.query.filter_by(id=id).first()
     if user is None:
         return failure_response("User not found")
 
@@ -274,9 +297,27 @@ def delete_user(id):
     return success_response(user.serialize())
 
 
+@app.route("/api/locations/<int:location_id>/facilities/", methods=["POST"])
+def create_facility(location_id):
+    """
+    Endpoint for creating facilities
+    """
+    body = json.loads(request.data)
+
+    name = body.get("name")
+    if name is None:
+        return failure_response("Missing name", 200)
+    facility = Facility(name=name, location_id=location_id)
+
+    db.session.add(facility)
+    db.session.commit()
+
+    return success_response(facility.serialize())
+
+
 @app.route("/api/locations/<int:location_id>/facilities")
 def get_all_facility(location_id):
-    facilities = db.Facility.query.filter_by(location_id=location_id)
+    facilities = Facility.query.filter_by(location_id=location_id)
     if facilities is None:
         return failure_response("Facility not found")
 
@@ -289,7 +330,7 @@ def get_all_facility(location_id):
 
 @app.route("/api/locations/<int:location_id>/facilities/<int:facility_id>/")
 def get_facility(location_id, facility_id):
-    facility = db.Facility.query.filter_by(
+    facility = Facility.query.filter_by(
         location_id=location_id, id=facility_id)
     if facility is None:
         return failure_response("Facility not found")
@@ -302,7 +343,7 @@ def add_reservation(location_id, facility_id):
     Endpoint for adding a reservation for a specific user
     """
 
-    facility = db.Facility.query.filter_by(
+    facility = Facility.query.filter_by(
         id=facility_id, location_id=location_id)
 
     if facility is None:
@@ -313,55 +354,53 @@ def add_reservation(location_id, facility_id):
     start_time = body.get("start_time")
     end_time = body.get("end_time")
 
-    user = db.User.query.filter_by(netid=netid).first()
+    # convert start_time and end_time to datetime
+
+    start_time = datetime.strptime(start_time, '%m/%d/%y %H:%M:%S')
+    end_time = datetime.strptime(end_time, '%m/%d/%y %H:%M:%S')
+
+    user = Users.query.filter_by(netid=netid).first()
 
     if user is None:
         return failure_response("Invalid netid.")
 
-    if db.Facility.query.filterby(start_time=start_time) is None and db.Facility.query.filterby(end_time=end_time) is None:
-        new_fac = db.Facility(name=facility.name, start_time=start_time,
-                              end_time=end_time, location_id=location_id)
-        db.session.add(new_fac)
-        new_fac.booked.append(user)
+    # check if user inputted start time is between any other reservation's start and end time
+    # check if user inputted end time is between any other reservation's start and end time
+    # cuz this means that user is trying to start or end a reservation during another reservation
+    # loop through all reservations at the facility the user is trying to reserve
+
+    # authentication for user to add reservation
+    if user.session_token == extract_token(request):
+        for reservation in Reservation.query.filter_by(facility_id=facility_id):
+            if reservation.start_time < start_time and reservation.end_time > start_time:
+                return failure_response("Start time is during another reservation.")
+            if reservation.start_time < end_time and reservation.end_time > end_time:
+                return failure_response("End time is during another reservation.")
+
+        reserve = Reservation(user_id=user.id, facility_id=facility.id,
+                              start_time=start_time, end_time=end_time)
+        db.session.add(reserve)
+        db.session.commit()
+        return success_response(reserve.serialize())
     else:
-        return failure_response("This time has been booked by some user.")
-    db.session.commit()
-    return success_response(new_fac.serialize())
+        return failure_response("Authentication error.")
 
 
-@app.route("/api/locations/<int:location_id>/facilities/<int:facility_id>/cancel/", methods=["DELETE"])
-def cancel_reservation(location_id, facility_id):
+@app.route("/api/reservations/<int:reservation_id>/cancel/", methods=["DELETE"])
+def cancel_reservation(reservation_id):
     """
     Endpoint for cancelling a reservation for a specific user
     """
-    location = db.Location.query.filter_by(id=location_id).first()
-    if location is None:
-        return failure_response("Location not found")
-
-    facility = db.Facility.query.filter_by(
-        id=facility_id, location_id=location_id)
-
-    if facility is None:
-        return failure_response("Facility not found.")
-    body = json.loads(request.data)
-
-    netid = body.get("netid")
-    start_time = body.get("start_time")
-    end_time = body.get("end_time")
-
-    user = db.User.query.filter_by(netid=netid).first()
-
-    if user is None:
-        return failure_response("Invalid netid.")
-
-    times = [start_time, end_time]
-    facility.datetime = times
-
-    # [2022/11/08 1100 , 2022/11/08 1200]
-    # datetime.now >
-
-    db.session.commit()
-    return success_response(course.serialize())
+    reserve = Reservation.query.filter_by(id=reservation_id).first()
+    user = Users.query.filter_by(id=reserve.user_id).first()
+    if reserve is None:
+        return failure_response("reservastion not found")
+    if user.session_token == extract_token(request):
+        db.session.delete(reserve)
+        db.session.commit()
+        return success_response(reserve.serialize())
+    else:
+        return failure_response("Authentication error.")
 
 
 if __name__ == "__main__":
