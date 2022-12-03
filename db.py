@@ -84,7 +84,7 @@ class Users(db.Model):
             "name": self.name,
             "netid": self.netid,
             "email": self.email,
-            "reservations": [f.simple_serialize() for f in self.reservations]
+            "reservations": [f.serialize() for f in self.reservations]
         }
 
     def simple_serialize(self):

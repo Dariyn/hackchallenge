@@ -2,7 +2,7 @@ import json
 
 from flask import Flask, request
 import users_dao
-import datetime
+from datetime import datetime
 
 from db import db
 from db import Location
@@ -315,8 +315,11 @@ def create_facility(location_id):
     return success_response(facility.serialize())
 
 
-@app.route("/api/locations/<int:location_id>/facilities")
+@app.route("/api/locations/<int:location_id>/facilities/")
 def get_all_facility(location_id):
+    """
+    Get all facilities of a location.
+    """
     facilities = Facility.query.filter_by(location_id=location_id)
     if facilities is None:
         return failure_response("Facility not found")
@@ -330,11 +333,14 @@ def get_all_facility(location_id):
 
 @app.route("/api/locations/<int:location_id>/facilities/<int:facility_id>/")
 def get_facility(location_id, facility_id):
+    """
+    Get a specific facility of a location by id.
+    """
     facility = Facility.query.filter_by(
-        location_id=location_id, id=facility_id)
+        location_id=location_id, id=facility_id).first()
     if facility is None:
         return failure_response("Facility not found")
-    return success_response(facility.simple_serialize)
+    return success_response(facility.simple_serialize())
 
 
 @app.route("/api/locations/<int:location_id>/facilities/<int:facility_id>/add/", methods=["POST"])
@@ -342,15 +348,19 @@ def add_reservation(location_id, facility_id):
     """
     Endpoint for adding a reservation for a specific user
     """
+    success, session_token = extract_token(request)
+    user = Users.query.filter_by(
+        session_token=session_token).first()  # authentication
+    if user is None:
+        return failure_response("Failed to authenticate.")
 
     facility = Facility.query.filter_by(
-        id=facility_id, location_id=location_id)
+        id=facility_id, location_id=location_id).first()
 
     if facility is None:
         return failure_response("Facility not found.")
     body = json.loads(request.data)
 
-    netid = body.get("netid")
     start_time = body.get("start_time")
     end_time = body.get("end_time")
 
@@ -359,31 +369,22 @@ def add_reservation(location_id, facility_id):
     start_time = datetime.strptime(start_time, '%m/%d/%y %H:%M:%S')
     end_time = datetime.strptime(end_time, '%m/%d/%y %H:%M:%S')
 
-    user = Users.query.filter_by(netid=netid).first()
-
-    if user is None:
-        return failure_response("Invalid netid.")
-
     # check if user inputted start time is between any other reservation's start and end time
     # check if user inputted end time is between any other reservation's start and end time
     # cuz this means that user is trying to start or end a reservation during another reservation
     # loop through all reservations at the facility the user is trying to reserve
 
-    # authentication for user to add reservation
-    if user.session_token == extract_token(request):
-        for reservation in Reservation.query.filter_by(facility_id=facility_id):
-            if reservation.start_time < start_time and reservation.end_time > start_time:
-                return failure_response("Start time is during another reservation.")
-            if reservation.start_time < end_time and reservation.end_time > end_time:
-                return failure_response("End time is during another reservation.")
+    for reservation in Reservation.query.filter_by(facility_id=facility_id):
+        if reservation.start_time < start_time and reservation.end_time > start_time:
+            return failure_response("Start time is during another reservation.")
+        if reservation.start_time < end_time and reservation.end_time > end_time:
+            return failure_response("End time is during another reservation.")
 
-        reserve = Reservation(user_id=user.id, facility_id=facility.id,
-                              start_time=start_time, end_time=end_time)
-        db.session.add(reserve)
-        db.session.commit()
-        return success_response(reserve.serialize())
-    else:
-        return failure_response("Authentication error.")
+    reserve = Reservation(user_id=user.id, facility_id=facility.id,
+                          start_time=start_time, end_time=end_time)
+    db.session.add(reserve)
+    db.session.commit()
+    return success_response(reserve.serialize())
 
 
 @app.route("/api/reservations/<int:reservation_id>/cancel/", methods=["DELETE"])
@@ -392,15 +393,17 @@ def cancel_reservation(reservation_id):
     Endpoint for cancelling a reservation for a specific user
     """
     reserve = Reservation.query.filter_by(id=reservation_id).first()
-    user = Users.query.filter_by(id=reserve.user_id).first()
+    success, session_token = extract_token(request)
+    user = Users.query.filter_by(
+        session_token=session_token).first()  # authentication
+    if user is None:
+        return failure_response("Failed to authenticate.")
+
     if reserve is None:
         return failure_response("reservastion not found")
-    if user.session_token == extract_token(request):
-        db.session.delete(reserve)
-        db.session.commit()
-        return success_response(reserve.serialize())
-    else:
-        return failure_response("Authentication error.")
+    db.session.delete(reserve)
+    db.session.commit()
+    return success_response(reserve.serialize())
 
 
 if __name__ == "__main__":
